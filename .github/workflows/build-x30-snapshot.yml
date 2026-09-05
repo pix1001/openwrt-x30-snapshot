@@ -1,4 +1,4 @@
-name: Build TOTOLINK X30 OpenWrt latest release
+name: Build TOTOLINK X30 OpenWrt Snapshot
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
     paths:
       - "config/x30.config"
       - "patches/**"
-      - ".github/workflows/build-x30-25.12.yml"
+      - ".github/workflows/build-x30-snapshot.yml"
   schedule:
     - cron: "0 3 * * 6"
 
@@ -16,12 +16,14 @@ permissions:
   contents: write
 
 concurrency:
-  group: x30-openwrt-latest-release
+  group: x30-openwrt-snapshot
   cancel-in-progress: false
 
 env:
   X30_PATCH_COMMIT: 1e4bed859aeb3c7047ee602866d833efed853e2d
   BUILD_JOBS: 2
+  OPENWRT_REF: master
+  OPENWRT_VERSION: SNAPSHOT
 
 jobs:
   build:
@@ -96,46 +98,6 @@ jobs:
             exit 1
           fi
 
-      - name: Resolve latest OpenWrt release
-        id: openwrt_release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if ! command -v gh >/dev/null 2>&1; then
-            echo "ERROR: GitHub CLI is not available on this runner."
-            exit 1
-          fi
-
-          OPENWRT_REF="$(gh api repos/openwrt/openwrt/releases/latest --jq '.tag_name')"
-
-          if [ -z "${OPENWRT_REF}" ] || [ "${OPENWRT_REF}" = "null" ]; then
-            echo "ERROR: Could not resolve latest OpenWrt release tag."
-            exit 1
-          fi
-
-          if ! [[ "${OPENWRT_REF}" =~ ^v[0-9]+[.][0-9]+([.][0-9]+)?$ ]]; then
-            echo "ERROR: Unexpected OpenWrt release tag format: ${OPENWRT_REF}"
-            exit 1
-          fi
-
-          if ! git ls-remote --exit-code --tags https://github.com/openwrt/openwrt.git "refs/tags/${OPENWRT_REF}" >/dev/null 2>&1; then
-            echo "ERROR: Latest release tag does not exist in openwrt/openwrt git refs: ${OPENWRT_REF}"
-            exit 1
-          fi
-
-          OPENWRT_VERSION="${OPENWRT_REF#v}"
-
-          echo "Latest OpenWrt release: ${OPENWRT_REF}"
-          echo "OpenWrt version: ${OPENWRT_VERSION}"
-
-          echo "openwrt_ref=${OPENWRT_REF}" >> "$GITHUB_OUTPUT"
-          echo "openwrt_version=${OPENWRT_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "OPENWRT_REF=${OPENWRT_REF}" >> "$GITHUB_ENV"
-          echo "OPENWRT_VERSION=${OPENWRT_VERSION}" >> "$GITHUB_ENV"
-
       - name: Free disk space
         shell: bash
         run: |
@@ -157,13 +119,13 @@ jobs:
             python3 python3-pyelftools python3-setuptools \
             rsync swig unzip zlib1g-dev file wget curl time jq
 
-      - name: Clone OpenWrt release tag
+      - name: Clone OpenWrt Snapshot
         shell: bash
         run: |
           set -euo pipefail
 
           if [ -z "${OPENWRT_REF:-}" ]; then
-            echo "ERROR: OPENWRT_REF was not set by the release resolver step."
+            echo "ERROR: OPENWRT_REF is not set."
             exit 1
           fi
 
@@ -206,7 +168,7 @@ jobs:
             ../config/x30.config \
             ../patches/0001-mediatek-add-TOTOLINK-X30-support.patch \
             ../patches/0002-mediatek-filogic-add-totolink-x30-fit-upgrade.patch \
-            ../.github/workflows/build-x30-25.12.yml \
+            ../.github/workflows/build-x30-snapshot.yml \
             | sha256sum | cut -c1-12)"
 
           echo "upstream_sha=${UPSTREAM_SHA}" >> "$GITHUB_OUTPUT"
@@ -221,6 +183,24 @@ jobs:
             git am --3way "../patches/0001-mediatek-add-TOTOLINK-X30-support.patch"
             PATCH_ID="${X30_PATCH_COMMIT:0:12}"
           fi
+
+            echo "Normalizing X30 Ethernet pinctrl for OpenWrt Snapshot"
+            sed -i \
+              's|pinctrl-0 = <&mdio_pins &gbe_led0_pins>;|pinctrl-0 = <\&mdio_pins>;|' \
+              target/linux/mediatek/dts/mt7981b-totolink-X30.dts
+
+            echo "Verifying X30 Ethernet pinctrl:"
+            grep -n "pinctrl-0" \
+              target/linux/mediatek/dts/mt7981b-totolink-X30.dts
+
+            if grep -q 'gbe_led0_pins' \
+              target/linux/mediatek/dts/mt7981b-totolink-X30.dts; then
+              echo "ERROR: X30 DTS still references gbe_led0_pins."
+              exit 1
+            fi
+
+            grep -q 'pinctrl-0 = <&mdio_pins>;' \
+              target/linux/mediatek/dts/mt7981b-totolink-X30.dts
 
           echo "Applying X30 FIT sysupgrade platform patch"
           if grep -q "totolink,X30" target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh && \
@@ -409,7 +389,7 @@ jobs:
         if: steps.prep.outputs.skip_build != 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: openwrt-totolink-x30-${{ steps.openwrt_release.outputs.openwrt_version }}
+          name: openwrt-totolink-x30-SNAPSHOT
           path: out/*
           if-no-files-found: error
 
@@ -418,8 +398,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.prep.outputs.tag }}
-          OPENWRT_REF: ${{ steps.openwrt_release.outputs.openwrt_ref }}
-          OPENWRT_VERSION: ${{ steps.openwrt_release.outputs.openwrt_version }}
+          OPENWRT_REF: master
+          OPENWRT_VERSION: SNAPSHOT
           UPSTREAM_SHA: ${{ steps.prep.outputs.upstream_sha }}
           PATCH_ID: ${{ steps.prep.outputs.patch_id }}
           CONFIG_HASH: ${{ steps.prep.outputs.config_hash }}
