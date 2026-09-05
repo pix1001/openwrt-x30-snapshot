@@ -733,7 +733,7 @@ index 00000000000000..1b8e51027ca493
 +
 +	band@1 {
 +		reg = <1>;
-+		nvmem-cells = <&macaddr_factory_4 0>;
++		nvmem-cells = <&macaddr_factory_4 4>;
 +		nvmem-cell-names = "mac-address";
 +	};
 +};
