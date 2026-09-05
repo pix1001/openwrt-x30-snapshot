@@ -202,13 +202,19 @@ jobs:
             grep -q 'pinctrl-0 = <&mdio_pins>;' \
               target/linux/mediatek/dts/mt7981b-totolink-X30.dts
 
-          echo "Applying X30 FIT sysupgrade platform patch"
-          if grep -q "totolink,X30" target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh && \
-             grep -q "totolink,x30" target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh; then
-            echo "X30 FIT sysupgrade handler already exists; not applying local platform patch."
-          else
-            git apply "../patches/0002-mediatek-filogic-add-totolink-x30-fit-upgrade.patch"
+          echo "Adding X30 FIT sysupgrade handlers"
+
+          PLATFORM_SH="target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh"
+
+          if ! grep -q 'totolink,X30' "${PLATFORM_SH}"; then
+            sed -i '/tplink,tl-xtr8488|\\/a\
+          \ttotolink,X30|\\\
+          \ttotolink,x30|\\' "${PLATFORM_SH}"
           fi
+
+          echo "Verifying X30 FIT upgrade handlers"
+          grep -n "totolink,X30" "${PLATFORM_SH}"
+          grep -n "totolink,x30" "${PLATFORM_SH}"
 
           echo "Verifying X30 image profile"
           grep -n "Device/totolink_X30" target/linux/mediatek/image/filogic.mk
